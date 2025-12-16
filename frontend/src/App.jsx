@@ -1,34 +1,38 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import './App.css'
 
+// Import components
+import Navbar from './components/Navbar'
+import Home from './components/Home'
+import Login from './components/Login'
+import Register from './components/Register'
+import ParentDashboard from './components/ParentDashboard'
+import ChildDashboard from './components/ChildDashboard'
+import TransactionApproval from './components/TransactionApproval'
+import AccountConversion from './components/AccountConversion'
+import DebugInfo from './components/DebugInfo'
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [user, setUser] = useState(null)
+  const [token, setToken] = useState(null)
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <Router>
+      <div className="App">
+        <Navbar user={user} setUser={setUser} setToken={setToken} />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login setUser={setUser} setToken={setToken} />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/parent-dashboard" element={<ParentDashboard user={user} token={token} />} />
+          <Route path="/child-dashboard" element={<ChildDashboard user={user} token={token} />} />
+          <Route path="/approvals" element={<TransactionApproval user={user} token={token} />} />
+          <Route path="/convert-account" element={<AccountConversion user={user} token={token} />} />
+          <Route path="/debug" element={<DebugInfo />} />
+        </Routes>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </Router>
   )
 }
 
