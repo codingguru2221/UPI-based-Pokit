@@ -33,6 +33,12 @@ public class User {
     @Column(name = "date_of_birth")
     private LocalDateTime dateOfBirth;
 
+    @Column(name = "child_age")
+    private Integer childAge;
+
+    @Column(name = "is_independent")
+    private Boolean isIndependent = false;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -54,6 +60,8 @@ public class User {
         this.passwordHash = passwordHash;
         this.role = role;
         this.dateOfBirth = dateOfBirth;
+        this.childAge = null; // Will be calculated based on dateOfBirth
+        this.isIndependent = false; // Default to false
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
@@ -123,6 +131,22 @@ public class User {
         this.dateOfBirth = dateOfBirth;
     }
 
+    public Integer getChildAge() {
+        return childAge;
+    }
+
+    public void setChildAge(Integer childAge) {
+        this.childAge = childAge;
+    }
+
+    public Boolean getIsIndependent() {
+        return isIndependent;
+    }
+
+    public void setIsIndependent(Boolean isIndependent) {
+        this.isIndependent = isIndependent;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -148,5 +172,17 @@ public class User {
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+    }
+    
+    /**
+     * Check if the user is eligible for account conversion to independent status
+     * @return true if the user is 18 years or older
+     */
+    public boolean isEligibleForConversion() {
+        if (this.dateOfBirth != null) {
+            int age = java.time.Period.between(this.dateOfBirth.toLocalDate(), java.time.LocalDate.now()).getYears();
+            return age >= 18;
+        }
+        return false;
     }
 }

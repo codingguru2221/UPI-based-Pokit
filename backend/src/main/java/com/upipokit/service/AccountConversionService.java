@@ -36,7 +36,7 @@ public class AccountConversionService {
         Child child = childRepository.findById(childId)
             .orElseThrow(() -> new RuntimeException("Child not found"));
         
-        User user = child.getUser();
+        User user = child;
         
         // Check if the child is 18 or older
         if (user.getDateOfBirth() == null || 
@@ -89,7 +89,7 @@ public class AccountConversionService {
         Child child = childRepository.findById(childId)
             .orElseThrow(() -> new RuntimeException("Child not found"));
         
-        User user = child.getUser();
+        User user = child;
         
         // Check if the child is 18 or older
         if (user.getDateOfBirth() == null) {

@@ -22,9 +22,11 @@ public class AccountController {
      * Create a pocket account for a child
      */
     @PostMapping("/pocket/{childId}")
-    public ResponseEntity<?> createPocketAccount(@PathVariable Long childId, @RequestParam BigDecimal monthlyLimit) {
+    public ResponseEntity<?> createPocketAccount(@PathVariable Long childId, 
+                                             @RequestParam Long parentId,
+                                             @RequestParam BigDecimal monthlyLimit) {
         try {
-            PocketAccount pocketAccount = accountService.createPocketAccount(childId, monthlyLimit);
+            PocketAccount pocketAccount = accountService.createPocketAccount(childId, parentId, monthlyLimit);
             return ResponseEntity.ok(pocketAccount);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -99,6 +101,32 @@ public class AccountController {
                                             @RequestParam BigDecimal amount) {
         try {
             boolean success = accountService.reallocateLimits(pocketAccountId, fromCategoryId, toCategoryId, amount);
+            return ResponseEntity.ok(success);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    /**
+     * Check if a child is eligible for account conversion
+     */
+    @GetMapping("/conversion/eligible/{childId}")
+    public ResponseEntity<?> isChildEligibleForConversion(@PathVariable Long childId) {
+        try {
+            boolean eligible = accountService.isChildEligibleForConversion(childId);
+            return ResponseEntity.ok(eligible);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    /**
+     * Convert a child account to an independent account
+     */
+    @PostMapping("/conversion/convert/{childId}")
+    public ResponseEntity<?> convertChildToIndependent(@PathVariable Long childId) {
+        try {
+            boolean success = accountService.convertChildToIndependent(childId);
             return ResponseEntity.ok(success);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());

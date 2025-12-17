@@ -64,6 +64,13 @@ public class AuthController {
 
     @PostMapping("/signup")
     public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
+        // Only allow parent registration through this endpoint
+        if (!signUpRequest.getRole().equals("PARENT")) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Only parent registration is allowed through this endpoint. Children must be created by parents."));
+        }
+        
         if (userRepository.existsByUsername(signUpRequest.getUsername())) {
             return ResponseEntity
                     .badRequest()
@@ -87,20 +94,60 @@ public class AuthController {
 
         userRepository.save(user);
 
-        // If the user is a parent, create a parent record
-        if (signUpRequest.getRole().equals("PARENT")) {
-            Parent parent = new Parent(user, signUpRequest.getUpiId(), signUpRequest.getBankAccountNumber());
-            parentRepository.save(parent);
+        // Create a parent record
+        Parent parent = new Parent(user, signUpRequest.getUpiId(), signUpRequest.getBankAccountNumber());
+        parentRepository.save(parent);
+
+        return ResponseEntity.ok(new MessageResponse("Parent registered successfully!"));
+    }
+    
+    @PostMapping("/child")
+    public ResponseEntity<?> createChild(@RequestHeader("Authorization") String authHeader,
+                                      @Valid @RequestBody SignupRequest signUpRequest) {
+        // Extract token and validate parent
+        String token = authHeader.substring(7); // Remove "Bearer " prefix
+        String parentUsername = jwtUtils.getUserNameFromJwtToken(token);
+        
+        User parentUser = userRepository.findByUsername(parentUsername)
+                .orElseThrow(() -> new RuntimeException("Parent not found"));
+                
+        if (parentUser.getRole() != User.Role.PARENT) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Only parents can create child accounts"));
         }
-        // If the user is a child, create a child record
-        else if (signUpRequest.getRole().equals("CHILD")) {
-            // Find the parent by ID
-            Parent parent = parentRepository.findById(signUpRequest.getParentId())
-                    .orElseThrow(() -> new RuntimeException("Parent not found"));
-            Child child = new Child(user, parent);
-            childRepository.save(child);
+        
+        Parent parent = parentRepository.findById(parentUser.getId())
+                .orElseThrow(() -> new RuntimeException("Parent record not found"));
+        
+        // Validate child data
+        if (userRepository.existsByUsername(signUpRequest.getUsername())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Username is already taken!"));
         }
 
-        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+        if (userRepository.existsByEmail(signUpRequest.getEmail())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new MessageResponse("Error: Email is already in use!"));
+        }
+
+        // Create child user account
+        User childUser = new User(signUpRequest.getName(),
+                signUpRequest.getUsername(),
+                signUpRequest.getEmail(),
+                signUpRequest.getPhone(),
+                encoder.encode(signUpRequest.getPassword()),
+                User.Role.CHILD,
+                signUpRequest.getDateOfBirth());
+
+        userRepository.save(childUser);
+
+        // Create child record linked to parent
+        Child child = new Child(childUser, parent);
+        childRepository.save(child);
+
+        return ResponseEntity.ok(new MessageResponse("Child account created successfully!"));
     }
 }

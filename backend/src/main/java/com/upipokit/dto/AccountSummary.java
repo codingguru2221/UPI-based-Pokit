@@ -60,6 +60,6 @@ public class AccountSummary {
     }
 
     public BigDecimal getPocketBalance() {
-        return pocketAccount != null ? pocketAccount.getAccount().getBalance() : BigDecimal.ZERO;
+        return pocketAccount != null ? pocketAccount.getCurrentBalance() : BigDecimal.ZERO;
     }
 }

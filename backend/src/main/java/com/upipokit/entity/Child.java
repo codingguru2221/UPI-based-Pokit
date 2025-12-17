@@ -5,10 +5,6 @@ import jakarta.persistence.*;
 @Entity
 @Table(name = "children")
 public class Child extends User {
-    @OneToOne
-    @JoinColumn(name = "user_id")
-    private User user;
-
     @ManyToOne
     @JoinColumn(name = "parent_id")
     private Parent parent;
@@ -19,17 +15,41 @@ public class Child extends User {
     }
 
     public Child(User user, Parent parent) {
-        this.user = user;
+        // Copy properties from the user object
+        this.setId(user.getId());
+        this.setName(user.getName());
+        this.setUsername(user.getUsername());
+        this.setEmail(user.getEmail());
+        this.setPhone(user.getPhone());
+        this.setPasswordHash(user.getPasswordHash());
+        this.setRole(user.getRole());
+        this.setDateOfBirth(user.getDateOfBirth());
+        this.setCreatedAt(user.getCreatedAt());
+        this.setUpdatedAt(user.getUpdatedAt());
+        
+        // Calculate child age based on date of birth
+        if (user.getDateOfBirth() != null) {
+            this.setChildAge(java.time.Period.between(user.getDateOfBirth().toLocalDate(), java.time.LocalDate.now()).getYears());
+        }
+        
         this.parent = parent;
     }
 
     // Getters and Setters
+    /**
+     * @deprecated Use the inherited methods from User instead
+     */
+    @Deprecated
     public User getUser() {
-        return user;
+        return this;
     }
-
+    
+    /**
+     * @deprecated Setting user is not needed as Child extends User
+     */
+    @Deprecated
     public void setUser(User user) {
-        this.user = user;
+        // No-op as Child extends User
     }
 
     public Parent getParent() {

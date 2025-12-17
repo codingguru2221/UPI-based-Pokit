@@ -40,13 +40,72 @@ public class AccountService {
     @Autowired
     UserRepository userRepository;
     
+    @Autowired
+    ApprovalHistoryRepository approvalHistoryRepository;
+    
+    @Autowired
+    ParentRepository parentRepository;
+    
+    /**
+     * Check if a child is eligible for account conversion
+     * @param childId the ID of the child
+     * @return true if eligible for conversion
+     */
+    public boolean isChildEligibleForConversion(Long childId) {
+        User child = userRepository.findById(childId)
+            .orElseThrow(() -> new RuntimeException("Child not found"));
+        
+        return child.isEligibleForConversion();
+    }
+    
+    /**
+     * Convert a child account to an independent account
+     * @param childId the ID of the child
+     * @return true if conversion successful
+     */
+    public boolean convertChildToIndependent(Long childId) {
+        User child = userRepository.findById(childId)
+            .orElseThrow(() -> new RuntimeException("Child not found"));
+        
+        // Check if child is eligible for conversion
+        if (!child.isEligibleForConversion()) {
+            throw new RuntimeException("Child is not eligible for account conversion (must be 18 years or older)");
+        }
+        
+        // Update child status to independent
+        child.setIsIndependent(true);
+        userRepository.save(child);
+        
+        // Find the child's pocket account
+        PocketAccount pocketAccount = pocketAccountRepository.findByChildUserId(childId);
+        if (pocketAccount != null) {
+            // Convert pocket account to a main account
+            Account mainAccount = new Account(child, Account.AccountType.MAIN, pocketAccount.getCurrentBalance());
+            accountRepository.save(mainAccount);
+            
+            // Delete the pocket account
+            pocketAccountRepository.delete(pocketAccount);
+        }
+        
+        // Create notification
+        String message = String.format("Congratulations %s! Your pocket money account has been converted to a full UPI account.", child.getName());
+        Notification notification = new Notification(child, message, Notification.NotificationType.ACCOUNT_CONVERTED);
+        notificationRepository.save(notification);
+        
+        // Send real-time notification via WebSocket
+        notificationWebSocketController.sendNotificationToUser(notification);
+        
+        return true;
+    }
+    
     /**
      * Create a pocket account for a child
      * @param childId the ID of the child
+     * @param parentId the ID of the parent
      * @param monthlyLimit the monthly limit for the pocket account
      * @return the created pocket account
      */
-    public PocketAccount createPocketAccount(Long childId, BigDecimal monthlyLimit) {
+    public PocketAccount createPocketAccount(Long childId, Long parentId, BigDecimal monthlyLimit) {
         // Find the child
         Optional<User> childOpt = userRepository.findById(childId);
         if (!childOpt.isPresent()) {
@@ -55,12 +114,32 @@ public class AccountService {
         
         User child = childOpt.get();
         
-        // Create main account
-        Account mainAccount = new Account(child, Account.AccountType.MAIN, BigDecimal.ZERO);
-        accountRepository.save(mainAccount);
+        // Verify child belongs to parent
+        if (child instanceof Child) {
+            Child childEntity = (Child) child;
+            if (!childEntity.getParent().getId().equals(parentId)) {
+                throw new RuntimeException("Child does not belong to the specified parent");
+            }
+        } else {
+            throw new RuntimeException("User is not a child");
+        }
         
-        // Create pocket account
-        PocketAccount pocketAccount = new PocketAccount(mainAccount, monthlyLimit, 1); // Reset on 1st of each month
+        // Find the parent's main account
+        List<Account> parentAccounts = accountRepository.findByUserId(parentId);
+        Account parentMainAccount = null;
+        for (Account account : parentAccounts) {
+            if (account.getAccountType() == Account.AccountType.MAIN) {
+                parentMainAccount = account;
+                break;
+            }
+        }
+        
+        if (parentMainAccount == null) {
+            throw new RuntimeException("Parent main account not found");
+        }
+        
+        // Create pocket account linked to parent's main account
+        PocketAccount pocketAccount = new PocketAccount(parentMainAccount, child, monthlyLimit, 1); // Reset on 1st of each month
         pocketAccountRepository.save(pocketAccount);
         
         // Create default category limits (evenly distributed)
@@ -107,16 +186,8 @@ public class AccountService {
      */
     public Transaction processTransaction(Long childId, String merchantName, String merchantUpiId, 
                                        BigDecimal amount, String categoryName, String description) {
-        // Find the child's pocket account
-        List<Account> accounts = accountRepository.findByUserId(childId);
-        PocketAccount pocketAccount = null;
-        
-        for (Account account : accounts) {
-            if (account.getAccountType() == Account.AccountType.POCKET) {
-                pocketAccount = pocketAccountRepository.findById(account.getId()).orElse(null);
-                break;
-            }
-        }
+        // Find the child's pocket account directly
+        PocketAccount pocketAccount = pocketAccountRepository.findByChildUserId(childId);
         
         if (pocketAccount == null) {
             throw new RuntimeException("Pocket account not found for child");
@@ -142,23 +213,36 @@ public class AccountService {
         }
         
         // Check if the transaction can be processed
-        Transaction transaction = new Transaction(pocketAccount.getAccount(), merchantName, merchantUpiId, 
+        Transaction transaction = new Transaction(pocketAccount.getParentAccount(), merchantName, merchantUpiId, 
                                                amount, category, Transaction.TransactionType.DEBIT, description);
         
-        // Check if category limit is exceeded
+        // Check if category limit is exceeded (Rule A: Category Exhausted, Balance Available)
         if (categoryLimit.isLimitExceeded()) {
-            // Check if total balance is available
-            if (pocketAccount.getAccount().getBalance().compareTo(amount) >= 0) {
-                // Category limit exceeded but total balance available - require parent approval
+            // Check if total balance is available in pocket account
+            if (pocketAccount.getCurrentBalance().compareTo(amount) >= 0) {
+                // Category limit exceeded but total balance available - allow transaction automatically (Rule A)
+                transaction.setStatus(Transaction.TransactionStatus.APPROVED);
+                
+                // Update category limit (log overflow)
+                categoryLimit.addToSpent(amount);
+                categoryLimitRepository.save(categoryLimit);
+                
+                // Update pocket account balance
+                BigDecimal newBalance = pocketAccount.getCurrentBalance().subtract(amount);
+                pocketAccount.setCurrentBalance(newBalance);
+                pocketAccountRepository.save(pocketAccount);
+                
+                // Also update parent account balance
+                BigDecimal newParentBalance = pocketAccount.getParentAccount().getBalance().subtract(amount);
+                pocketAccount.getParentAccount().setBalance(newParentBalance);
+                accountRepository.save(pocketAccount.getParentAccount());
+            } else {
+                // Neither category limit nor total balance available (Rule C: Hard Limit Exceeded)
                 transaction.setParentApprovalRequired(true);
                 transaction.setStatus(Transaction.TransactionStatus.PENDING);
                 
                 // Create notification for parent
                 createParentApprovalNotification(pocketAccount, transaction);
-            } else {
-                // Neither category limit nor total balance available
-                transaction.setStatus(Transaction.TransactionStatus.REJECTED);
-                throw new RuntimeException("Insufficient funds for transaction");
             }
         } else if (categoryLimit.hasSufficientBalance(amount)) {
             // Sufficient balance in category - approve transaction
@@ -168,23 +252,41 @@ public class AccountService {
             categoryLimit.addToSpent(amount);
             categoryLimitRepository.save(categoryLimit);
             
-            // Update account balance
-            BigDecimal newBalance = pocketAccount.getAccount().getBalance().subtract(amount);
-            pocketAccount.getAccount().setBalance(newBalance);
-            accountRepository.save(pocketAccount.getAccount());
+            // Update pocket account balance
+            BigDecimal newBalance = pocketAccount.getCurrentBalance().subtract(amount);
+            pocketAccount.setCurrentBalance(newBalance);
+            pocketAccountRepository.save(pocketAccount);
+            
+            // Also update parent account balance
+            BigDecimal newParentBalance = pocketAccount.getParentAccount().getBalance().subtract(amount);
+            pocketAccount.getParentAccount().setBalance(newParentBalance);
+            accountRepository.save(pocketAccount.getParentAccount());
         } else {
-            // Insufficient balance in category but check total balance
-            if (pocketAccount.getAccount().getBalance().compareTo(amount) >= 0) {
-                // Category limit exceeded but total balance available - require parent approval
+            // Insufficient balance in category but check total balance (Rule C: Hard Limit Exceeded)
+            if (pocketAccount.getCurrentBalance().compareTo(amount) >= 0) {
+                // Category limit exceeded but total balance available - allow transaction automatically (Rule A)
+                transaction.setStatus(Transaction.TransactionStatus.APPROVED);
+                
+                // Update category limit (log overflow)
+                categoryLimit.addToSpent(amount);
+                categoryLimitRepository.save(categoryLimit);
+                
+                // Update pocket account balance
+                BigDecimal newBalance = pocketAccount.getCurrentBalance().subtract(amount);
+                pocketAccount.setCurrentBalance(newBalance);
+                pocketAccountRepository.save(pocketAccount);
+                
+                // Also update parent account balance
+                BigDecimal newParentBalance = pocketAccount.getParentAccount().getBalance().subtract(amount);
+                pocketAccount.getParentAccount().setBalance(newParentBalance);
+                accountRepository.save(pocketAccount.getParentAccount());
+            } else {
+                // Neither category limit nor total balance available (Rule C: Hard Limit Exceeded)
                 transaction.setParentApprovalRequired(true);
                 transaction.setStatus(Transaction.TransactionStatus.PENDING);
                 
                 // Create notification for parent
                 createParentApprovalNotification(pocketAccount, transaction);
-            } else {
-                // Neither category limit nor total balance available
-                transaction.setStatus(Transaction.TransactionStatus.REJECTED);
-                throw new RuntimeException("Insufficient funds for transaction");
             }
         }
         
@@ -201,25 +303,51 @@ public class AccountService {
      */
     private void createParentApprovalNotification(PocketAccount pocketAccount, Transaction transaction) {
         // Find the child
-        User child = pocketAccount.getAccount().getUser();
+        User child = pocketAccount.getChildUser();
         
-        // Find the parent (assuming single parent for simplicity)
+        // Find the parent
         if (child instanceof Child) {
             Child childEntity = (Child) child;
             Parent parent = childEntity.getParent();
             
             if (parent != null) {
-                String message = String.format("Approval required for %s's transaction of ₹%.2f at %s for %s", 
+                String message = String.format("Approval required for %s's transaction of ₹%.2f at %s for %s. Description: %s. Time: %s", 
                     child.getName(), transaction.getAmount(), transaction.getMerchantName(), 
-                    transaction.getCategory().getName());
+                    transaction.getCategory().getName(), transaction.getDescription(), 
+                    transaction.getTransactionTime().toString());
                 
-                Notification notification = new Notification(parent.getUser(), message, 
+                Notification notification = new Notification(parent, message, 
                     Notification.NotificationType.TRANSACTION_APPROVAL);
                 notificationRepository.save(notification);
                 
                 // Send real-time notification via WebSocket
                 notificationWebSocketController.sendNotificationToUser(notification);
             }
+        }
+    }
+    
+    /**
+     * Send notification to child about transaction approval/rejection
+     * @param pocketAccount the pocket account
+     * @param transaction the transaction
+     * @param approved whether the transaction was approved or rejected
+     */
+    private void sendApprovalNotificationToChild(PocketAccount pocketAccount, Transaction transaction, boolean approved) {
+        // Find the child
+        User child = pocketAccount.getChildUser();
+        
+        if (child != null) {
+            String status = approved ? "approved" : "rejected";
+            String message = String.format("Your transaction of ₹%.2f at %s for %s has been %s by your parent", 
+                transaction.getAmount(), transaction.getMerchantName(), 
+                transaction.getCategory().getName(), status);
+            
+            Notification notification = new Notification(child, message, 
+                Notification.NotificationType.TRANSACTION_APPROVAL);
+            notificationRepository.save(notification);
+            
+            // Send real-time notification via WebSocket
+            notificationWebSocketController.sendNotificationToUser(notification);
         }
     }
     
@@ -234,13 +362,16 @@ public class AccountService {
         Transaction transaction = transactionRepository.findById(transactionId)
             .orElseThrow(() -> new RuntimeException("Transaction not found"));
         
+        // Find the pocket account for this transaction
+        PocketAccount pocketAccount = pocketAccountRepository.findByParentAccount_Id(transaction.getAccount().getId());
+        
+        if (pocketAccount == null) {
+            throw new RuntimeException("Pocket account not found for transaction");
+        }
+        
         // Verify parent has permission to approve
-        User child = transaction.getAccount().getUser();
-        if (child instanceof Child) {
-            Child childEntity = (Child) child;
-            if (!childEntity.getParent().getId().equals(parentId)) {
-                throw new RuntimeException("Parent not authorized to approve this transaction");
-            }
+        if (!pocketAccount.getParentAccount().getUser().getId().equals(parentId)) {
+            throw new RuntimeException("Parent not authorized to approve this transaction");
         }
         
         // Update transaction status
@@ -248,15 +379,20 @@ public class AccountService {
         transaction.setStatus(Transaction.TransactionStatus.APPROVED);
         transactionRepository.save(transaction);
         
-        // Update account balance
-        Account account = transaction.getAccount();
-        BigDecimal newBalance = account.getBalance().subtract(transaction.getAmount());
-        account.setBalance(newBalance);
-        accountRepository.save(account);
+        // Update pocket account balance
+        BigDecimal newBalance = pocketAccount.getCurrentBalance().subtract(transaction.getAmount());
+        pocketAccount.setCurrentBalance(newBalance);
+        pocketAccountRepository.save(pocketAccount);
+        
+        // Update parent account balance
+        Account parentAccount = pocketAccount.getParentAccount();
+        BigDecimal newParentBalance = parentAccount.getBalance().subtract(transaction.getAmount());
+        parentAccount.setBalance(newParentBalance);
+        accountRepository.save(parentAccount);
         
         // Update category limit if applicable
         if (transaction.getCategory() != null) {
-            List<CategoryLimit> categoryLimits = categoryLimitRepository.findByPocketAccountId(account.getId());
+            List<CategoryLimit> categoryLimits = categoryLimitRepository.findByPocketAccountId(pocketAccount.getId());
             for (CategoryLimit categoryLimit : categoryLimits) {
                 if (categoryLimit.getCategory().getId().equals(transaction.getCategory().getId())) {
                     categoryLimit.addToSpent(transaction.getAmount());
@@ -265,6 +401,16 @@ public class AccountService {
                 }
             }
         }
+        
+        // Create approval history record
+        Parent parent = parentRepository.findById(parentId)
+            .orElseThrow(() -> new RuntimeException("Parent not found"));
+        ApprovalHistory approvalHistory = new ApprovalHistory(transaction, parent, 
+            ApprovalHistory.ApprovalStatus.APPROVED, transaction.getAmount(), "Approved via web interface");
+        approvalHistoryRepository.save(approvalHistory);
+        
+        // Send notification to child about approval
+        sendApprovalNotificationToChild(pocketAccount, transaction, true);
         
         return transaction;
     }
@@ -280,19 +426,35 @@ public class AccountService {
         Transaction transaction = transactionRepository.findById(transactionId)
             .orElseThrow(() -> new RuntimeException("Transaction not found"));
         
+        // Find the pocket account for this transaction
+        PocketAccount pocketAccount = pocketAccountRepository.findByParentAccount_Id(transaction.getAccount().getId());
+        
+        if (pocketAccount == null) {
+            throw new RuntimeException("Pocket account not found for transaction");
+        }
+        
         // Verify parent has permission to reject
-        User child = transaction.getAccount().getUser();
-        if (child instanceof Child) {
-            Child childEntity = (Child) child;
-            if (!childEntity.getParent().getId().equals(parentId)) {
-                throw new RuntimeException("Parent not authorized to reject this transaction");
-            }
+        if (!pocketAccount.getParentAccount().getUser().getId().equals(parentId)) {
+            throw new RuntimeException("Parent not authorized to reject this transaction");
         }
         
         // Update transaction status
         transaction.setParentApproved(false);
         transaction.setStatus(Transaction.TransactionStatus.REJECTED);
         transactionRepository.save(transaction);
+        
+        // Create approval history record
+        Parent parent = parentRepository.findById(parentId)
+            .orElseThrow(() -> new RuntimeException("Parent not found"));
+        ApprovalHistory approvalHistory = new ApprovalHistory(transaction, parent, 
+            ApprovalHistory.ApprovalStatus.REJECTED, transaction.getAmount(), "Rejected via web interface");
+        approvalHistoryRepository.save(approvalHistory);
+        
+        // Send notification to child about rejection
+        PocketAccount childPocketAccount = pocketAccountRepository.findByParentAccount_Id(transaction.getAccount().getId());
+        if (childPocketAccount != null) {
+            sendApprovalNotificationToChild(childPocketAccount, transaction, false);
+        }
         
         return transaction;
     }
@@ -303,15 +465,27 @@ public class AccountService {
      * @return account summary
      */
     public AccountSummary getAccountSummary(Long userId) {
-        List<Account> accounts = accountRepository.findByUserId(userId);
+        User user = userRepository.findById(userId).orElse(null);
         Account mainAccount = null;
         PocketAccount pocketAccount = null;
         
-        for (Account account : accounts) {
-            if (account.getAccountType() == Account.AccountType.MAIN) {
-                mainAccount = account;
-            } else if (account.getAccountType() == Account.AccountType.POCKET) {
-                pocketAccount = pocketAccountRepository.findById(account.getId()).orElse(null);
+        if (user != null) {
+            // For parents, get their main account
+            if (user.getRole() == User.Role.PARENT) {
+                List<Account> accounts = accountRepository.findByUserId(userId);
+                for (Account account : accounts) {
+                    if (account.getAccountType() == Account.AccountType.MAIN) {
+                        mainAccount = account;
+                        break;
+                    }
+                }
+            }
+            // For children, get their pocket account
+            else if (user.getRole() == User.Role.CHILD) {
+                pocketAccount = pocketAccountRepository.findByChildUserId(userId);
+                if (pocketAccount != null) {
+                    mainAccount = pocketAccount.getParentAccount();
+                }
             }
         }
         
@@ -360,12 +534,16 @@ public class AccountService {
             throw new RuntimeException("Not enough spent amount in from category to reallocate");
         }
         
-        // Update limits
+        // Update limits (Rule B: Child Emergency Reallocation)
         fromLimit.setLimitAmount(fromLimit.getLimitAmount().subtract(amount));
         toLimit.setLimitAmount(toLimit.getLimitAmount().add(amount));
         
         categoryLimitRepository.save(fromLimit);
         categoryLimitRepository.save(toLimit);
+        
+        // Log reallocation history (would typically save to a separate table)
+        System.out.println("Category limit reallocation: " + amount + " moved from " + 
+                          fromLimit.getCategory().getName() + " to " + toLimit.getCategory().getName());
         
         return true;
     }
