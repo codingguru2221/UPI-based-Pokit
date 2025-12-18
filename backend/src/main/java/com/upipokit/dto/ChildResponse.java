@@ -1,34 +1,15 @@
-package com.upipokit.entity;
+package com.upipokit.dto;
 
-import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-@Entity
-@Table(name = "children")
-public class Child {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class ChildResponse {
     private Integer childId;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_id", nullable = false)
-    private Parent parent;
-
-    @Column(nullable = false, length = 100)
     private String name;
-
     private Integer age;
-
     private BigDecimal monthlyLimit;
-
     private BigDecimal currentBalance;
-
-    private Instant createdAt = Instant.now();
-
-    public Child() {
-    }
+    private Instant createdAt;
 
     public Integer getChildId() {
         return childId;
@@ -36,14 +17,6 @@ public class Child {
 
     public void setChildId(Integer childId) {
         this.childId = childId;
-    }
-
-    public Parent getParent() {
-        return parent;
-    }
-
-    public void setParent(Parent parent) {
-        this.parent = parent;
     }
 
     public String getName() {

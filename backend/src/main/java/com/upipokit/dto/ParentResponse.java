@@ -1,34 +1,14 @@
-package com.upipokit.entity;
+package com.upipokit.dto;
 
-import jakarta.persistence.*;
 import java.time.Instant;
 
-@Entity
-@Table(name = "parents")
-public class Parent {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class ParentResponse {
     private Integer parentId;
-
-    @Column(nullable = false, length = 100)
     private String fullName;
-
-    @Column(nullable = false, unique = true, length = 100)
     private String email;
-
-    @Column(nullable = false, unique = true, length = 15)
     private String phone;
-
-    @Column(nullable = false)
-    private String passwordHash;
-
     private String upiId;
-
-    private Instant createdAt = Instant.now();
-
-    public Parent() {
-    }
+    private Instant createdAt;
 
     public Integer getParentId() {
         return parentId;
@@ -60,14 +40,6 @@ public class Parent {
 
     public void setPhone(String phone) {
         this.phone = phone;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
     }
 
     public String getUpiId() {

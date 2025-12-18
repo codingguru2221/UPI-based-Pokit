@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import './App.css'
 
 // Import components
-import Navbar from './components/Navbar'
 import Home from './components/Home'
 import Login from './components/Login'
 import Register from './components/Register'
-import ParentDashboard from './components/ParentDashboard'
-import ChildDashboard from './components/ChildDashboard'
-import TransactionApproval from './components/TransactionApproval'
-import AccountConversion from './components/AccountConversion'
-import DebugInfo from './components/DebugInfo'
+
+// Import parent pages
+import ParentDashboard from './pages/parent/Dashboard'
+import CreateChild from './pages/parent/CreateChild'
+import ChildDetails from './pages/parent/ChildDetails'
+import Approvals from './pages/parent/Approvals'
+
+// Import child pages
+import ChildDashboard from './pages/child/Dashboard'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -19,17 +21,16 @@ function App() {
 
   return (
     <Router>
-      <div className="App">
-        <Navbar user={user} setUser={setUser} setToken={setToken} />
+      <div className="app">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login setUser={setUser} setToken={setToken} />} />
           <Route path="/register" element={<Register />} />
           <Route path="/parent-dashboard" element={<ParentDashboard user={user} token={token} />} />
+          <Route path="/parent/create-child/:parentId" element={<CreateChild />} />
+          <Route path="/parent/child-details/:childId" element={<ChildDetails />} />
+          <Route path="/parent/approvals/:parentId" element={<Approvals />} />
           <Route path="/child-dashboard" element={<ChildDashboard user={user} token={token} />} />
-          <Route path="/approvals" element={<TransactionApproval user={user} token={token} />} />
-          <Route path="/convert-account" element={<AccountConversion user={user} token={token} />} />
-          <Route path="/debug" element={<DebugInfo />} />
         </Routes>
       </div>
     </Router>

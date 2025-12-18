@@ -1,152 +1,94 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 
-const CreateChild = ({ user, token }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    username: '',
-    email: '',
-    phone: '',
-    password: '',
-    dateOfBirth: ''
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const navigate = useNavigate();
+export default function CreateChild() {
+  const { parentId } = useParams()
+  const navigate = useNavigate()
+  
+  const [name, setName] = useState('')
+  const [age, setAge] = useState('')
+  const [monthlyLimit, setMonthlyLimit] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
+  const submit = async (e) => {
+    e.preventDefault()
+    setIsLoading(true)
     try {
-      const response = await fetch('http://localhost:8080/api/auth/child', {
+      const res = await fetch(`/api/children/parent/${parentId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setSuccess('Child account created successfully!');
-        setTimeout(() => {
-          navigate('/parent/dashboard');
-        }, 2000);
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, age: parseInt(age), monthlyLimit: parseFloat(monthlyLimit) })
+      })
+      
+      if (res.status === 201) {
+        setMessage('Child added successfully')
+        setTimeout(() => navigate('/parent-dashboard'), 2000)
       } else {
-        setError(data.message || 'Child account creation failed');
+        const text = await res.text()
+        setError('Error: ' + text)
       }
     } catch (err) {
-      setError('An error occurred during child account creation');
+      setError('Network error: ' + err.message)
     } finally {
-      setLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="auth-container">
-      <div className="auth-form">
-        <div className="form-header">
-          <button onClick={() => navigate(-1)} className="btn secondary">
-            ← Back
-          </button>
-          <h2>Create Child Account</h2>
-        </div>
-        
-        {error && <div className="error-message">{error}</div>}
-        {success && <div className="success-message">{success}</div>}
-        
-        <form onSubmit={handleSubmit}>
+    <div className="container">
+      <div className="form-card">
+        <h2>Add Child</h2>
+        <form onSubmit={submit}>
           <div className="form-group">
-            <label htmlFor="name">Full Name</label>
-            <input
-              type="text"
+            <label htmlFor="name">Child's Name</label>
+            <input 
               id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
+              className="form-control"
+              placeholder="Child's Name" 
+              value={name} 
+              onChange={e => setName(e.target.value)} 
               required
             />
           </div>
-          
           <div className="form-group">
-            <label htmlFor="username">Username</label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
+            <label htmlFor="age">Age</label>
+            <input 
+              id="age"
+              className="form-control"
+              placeholder="Age" 
+              type="number" 
+              value={age} 
+              onChange={e => setAge(e.target.value)} 
               required
             />
           </div>
-          
           <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
+            <label htmlFor="monthlyLimit">Monthly Limit (₹)</label>
+            <input 
+              id="monthlyLimit"
+              className="form-control"
+              placeholder="Monthly Limit" 
+              type="number" 
+              step="0.01"
+              value={monthlyLimit} 
+              onChange={e => setMonthlyLimit(e.target.value)} 
               required
             />
           </div>
-          
-          <div className="form-group">
-            <label htmlFor="phone">Phone</label>
-            <input
-              type="tel"
-              id="phone"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="dateOfBirth">Date of Birth</label>
-            <input
-              type="date"
-              id="dateOfBirth"
-              name="dateOfBirth"
-              value={formData.dateOfBirth}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          
-          <button type="submit" disabled={loading} className="btn primary">
-            {loading ? 'Creating...' : 'Create Child Account'}
+          <button type="submit" className="btn btn-primary btn-block" disabled={isLoading}>
+            {isLoading ? 'Adding Child...' : 'Add Child'}
           </button>
         </form>
+        
+        {message && <div className="alert alert-success">{message}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
+        
+        <button className="btn btn-secondary btn-block" onClick={() => navigate('/parent-dashboard')}>
+          Back to Dashboard
+        </button>
       </div>
     </div>
-  );
-};
-
-export default CreateChild;
+  )
+}

@@ -1,31 +1,13 @@
-package com.upipokit.entity;
+package com.upipokit.dto;
 
-import jakarta.persistence.*;
 import java.math.BigDecimal;
 
-@Entity
-@Table(name = "categories")
-public class Category {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class CategoryResponse {
     private Integer categoryId;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "child_id", nullable = false)
-    private Child child;
-
-    @Column(length = 50)
     private String categoryName;
-
     private BigDecimal allocatedLimit;
-
     private BigDecimal remainingLimit;
-
-    private Boolean locked = false;
-
-    public Category() {
-    }
+    private Boolean locked;
 
     public Integer getCategoryId() {
         return categoryId;
@@ -33,14 +15,6 @@ public class Category {
 
     public void setCategoryId(Integer categoryId) {
         this.categoryId = categoryId;
-    }
-
-    public Child getChild() {
-        return child;
-    }
-
-    public void setChild(Child child) {
-        this.child = child;
     }
 
     public String getCategoryName() {

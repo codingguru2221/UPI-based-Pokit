@@ -1,149 +1,92 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react'
 
-const ParentDashboard = ({ user, token }) => {
-  const [accountSummary, setAccountSummary] = useState(null);
-  const [children, setChildren] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
+export default function ParentDashboard({ user, token }) {
+  const [children, setChildren] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (user && token) {
-      fetchAccountSummary();
-      fetchChildren();
+    if (user) {
+      fetchChildren()
     }
-  }, [user, token]);
-
-  const fetchAccountSummary = async () => {
-    try {
-      const response = await fetch(`http://localhost:8080/api/accounts/summary/${user.id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAccountSummary(data);
-      } else {
-        setError('Failed to fetch account summary');
-      }
-    } catch (err) {
-      setError('An error occurred while fetching account summary');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user])
 
   const fetchChildren = async () => {
-    // In a real implementation, this would fetch actual children from the backend
-    // For now, we'll use mock data
-    setChildren([
-      { id: 1, name: 'Child 1', age: 12 },
-      { id: 2, name: 'Child 2', age: 15 }
-    ]);
-    setLoading(false);
-  };
-
-  const handleViewChild = (childId) => {
-    // Navigate to child details page
-    navigate(`/parent/child/${childId}`);
-  };
-
-  const handleCreateChildAccount = () => {
-    // Navigate to create child account page
-    navigate('/parent/create-child');
-  };
-
-  if (loading) {
-    return <div className="dashboard">Loading...</div>;
+    try {
+      const res = await fetch(`/api/children/parent/${user.parentId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setChildren(data)
+      } else {
+        setError('Failed to fetch children')
+      }
+    } catch (err) {
+      setError('Error fetching children: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
+  if (loading) return <div className="container"><div className="card"><p>Loading...</p></div></div>
+  if (error) return <div className="container"><div className="card"><div className="alert alert-error">Error: {error}</div></div></div>
+
   return (
-    <div className="dashboard parent-dashboard">
+    <div className="container dashboard">
       <div className="dashboard-header">
         <h1>Parent Dashboard</h1>
-        <button onClick={handleCreateChildAccount} className="btn primary">
-          Create Child Account
-        </button>
+        <h3>Welcome, {user.fullName}</h3>
       </div>
       
-      {error && <div className="error-message">{error}</div>}
-      
-      <div className="dashboard-content">
-        <div className="account-summary">
-          <h2>Account Summary</h2>
-          {accountSummary && (
-            <div className="summary-cards">
-              <div className="summary-card">
-                <h3>Total Balance</h3>
-                <p>₹{accountSummary.totalBalance || '0.00'}</p>
-              </div>
-              
-              <div className="summary-card">
-                <h3>Pocket Balance</h3>
-                <p>₹{accountSummary.pocketBalance || '0.00'}</p>
-              </div>
-            </div>
-          )}
+      <div className="summary-cards">
+        <div className="summary-card">
+          <h3>Total Children</h3>
+          <p className="amount">{children.length}</p>
         </div>
-        
-        <div className="children-section">
-          <div className="section-header">
-            <h2>Your Children</h2>
-            <button onClick={handleCreateChildAccount} className="btn secondary">
-              Add Child
-            </button>
-          </div>
+      </div>
+      
+      <div className="card">
+        <div className="card-header">
+          <h2>Your Children</h2>
+        </div>
+        {children.length === 0 ? (
+          <p>No children added yet</p>
+        ) : (
           <div className="children-grid">
             {children.map(child => (
-              <div key={child.id} className="child-card">
+              <div className="child-card" key={child.childId}>
                 <h3>{child.name}</h3>
                 <p>Age: {child.age}</p>
-                <div className="child-actions">
-                  <button onClick={() => handleViewChild(child.id)} className="btn primary">
-                    View Details
-                  </button>
-                </div>
+                <p className="balance">Balance: ₹{child.currentBalance} / ₹{child.monthlyLimit}</p>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => window.location.href = `/parent/child-details/${child.childId}`}>
+                  View Details
+                </button>
               </div>
             ))}
           </div>
+        )}
+      </div>
+      
+      <div className="card">
+        <div className="card-header">
+          <h2>Actions</h2>
         </div>
-        
-        <div className="recent-transactions">
-          <h2>Recent Transactions</h2>
-          {accountSummary && accountSummary.recentTransactions && accountSummary.recentTransactions.length > 0 ? (
-            <table className="transactions-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Merchant</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accountSummary.recentTransactions.map(transaction => (
-                  <tr key={transaction.id}>
-                    <td>{new Date(transaction.transactionTime).toLocaleDateString()}</td>
-                    <td>{transaction.merchantName}</td>
-                    <td>{transaction.category?.name || 'N/A'}</td>
-                    <td>₹{transaction.amount}</td>
-                    <td>{transaction.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p>No recent transactions</p>
-          )}
+        <div className="d-flex justify-content-between">
+          <button 
+            className="btn btn-primary"
+            onClick={() => window.location.href = `/parent/create-child/${user.parentId}`}>
+            Add Child
+          </button>
+          <button 
+            className="btn btn-secondary"
+            onClick={() => window.location.href = `/parent/approvals/${user.parentId}`}>
+            View Pending Approvals
+          </button>
         </div>
       </div>
     </div>
-  );
-};
-
-export default ParentDashboard;
+  )
+}
